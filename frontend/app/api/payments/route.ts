@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { supabase } from "@/lib/supabase";
+import { scoreTransaction } from "@/lib/risk";
+import { getCustomerHistory } from "@/lib/customer-history";
+
 import {
   razorpay,
   razorpayKeyId,
@@ -14,28 +17,43 @@ import {
   releaseLock,
 } from "@/lib/idempotency";
 
-export async function POST(request: NextRequest) {
+
+export async function POST(
+  request: NextRequest
+) {
   let idempotencyKey: string | null = null;
   let lockToken: string | null = null;
 
   try {
-    
+
+    // =====================================================
+    // 1. IDEMPOTENCY KEY
+    // =====================================================
 
     idempotencyKey =
-      request.headers.get("Idempotency-Key");
+      request.headers.get(
+        "Idempotency-Key"
+      );
 
     if (!idempotencyKey) {
+
       return NextResponse.json(
         {
           success: false,
-          message: "Idempotency-Key is required",
+          message:
+            "Idempotency-Key is required",
         },
         { status: 400 }
       );
     }
 
-    
-    const body = await request.json();
+
+    // =====================================================
+    // 2. REQUEST BODY
+    // =====================================================
+
+    const body =
+      await request.json();
 
     const {
       customer_id,
@@ -43,15 +61,21 @@ export async function POST(request: NextRequest) {
       currency,
       description,
       payment_method,
+      retry_count = 0,
     } = body;
 
-    
+
+    // =====================================================
+    // 3. VALIDATION
+    // =====================================================
 
     if (!customer_id) {
+
       return NextResponse.json(
         {
           success: false,
-          message: "customer_id is required",
+          message:
+            "customer_id is required",
         },
         { status: 400 }
       );
@@ -61,6 +85,7 @@ export async function POST(request: NextRequest) {
       typeof amount !== "number" ||
       amount <= 0
     ) {
+
       return NextResponse.json(
         {
           success: false,
@@ -72,16 +97,19 @@ export async function POST(request: NextRequest) {
     }
 
     if (!currency) {
+
       return NextResponse.json(
         {
           success: false,
-          message: "currency is required",
+          message:
+            "currency is required",
         },
         { status: 400 }
       );
     }
 
     if (!payment_method) {
+
       return NextResponse.json(
         {
           success: false,
@@ -92,31 +120,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    
+
+    // =====================================================
+    // 4. ACQUIRE IDEMPOTENCY LOCK
+    // =====================================================
 
     lockToken =
-      await acquireLock(idempotencyKey);
-
-    
+      await acquireLock(
+        idempotencyKey
+      );
 
     if (!lockToken) {
+
       const existing =
         await getIdempotencyRecord(
           idempotencyKey
         );
 
-      
       if (
         existing &&
         existing.status === "COMPLETED"
       ) {
+
         return NextResponse.json({
           ...existing.response,
           reused: true,
         });
       }
-
-     
 
       return NextResponse.json(
         {
@@ -128,18 +158,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-   
+
+    // =====================================================
+    // 5. CHECK EXISTING IDEMPOTENCY RECORD
+    // =====================================================
 
     const existing =
       await getIdempotencyRecord(
         idempotencyKey
       );
 
-   
     if (
       existing &&
       existing.status === "COMPLETED"
     ) {
+
       await releaseLock(
         idempotencyKey,
         lockToken
@@ -153,12 +186,11 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    
-
     if (
       existing &&
       existing.status === "PROCESSING"
     ) {
+
       await releaseLock(
         idempotencyKey,
         lockToken
@@ -176,56 +208,184 @@ export async function POST(request: NextRequest) {
       );
     }
 
-   
+
+    // =====================================================
+    // 6. CREATE IDEMPOTENCY RECORD
+    // =====================================================
 
     await createIdempotencyRecord(
       idempotencyKey
     );
 
-    
+
+    // =====================================================
+    // 7. GET CUSTOMER HISTORY
+    // =====================================================
+
+    const customerHistory =
+      await getCustomerHistory(
+        supabase,
+        customer_id
+      );
+
+
+    // =====================================================
+    // 8. ML RISK SCORING
+    // =====================================================
+
+    const createdAt =
+      new Date().toISOString();
+
+    const risk =
+      await scoreTransaction({
+
+        amount:
+          Number(amount),
+
+        paymentMethod:
+          payment_method,
+
+        createdAt,
+
+        retryCount:
+          Number(retry_count || 0),
+
+        customerHistory,
+      });
+
+
+    console.log(
+      "Risk result:",
+      risk
+    );
+
+
+    // =====================================================
+    // 9. HIGH RISK → BLOCK
+    // =====================================================
+
+    if (
+      risk &&
+      risk.risk_level === "HIGH"
+    ) {
+
+      await releaseLock(
+        idempotencyKey,
+        lockToken
+      );
+
+      lockToken = null;
+
+      return NextResponse.json(
+        {
+          success: false,
+
+          status: "BLOCKED",
+
+          risk_score:
+            risk.risk_score,
+
+          risk_probability:
+            risk.risk_probability,
+
+          risk_level:
+            risk.risk_level,
+
+          risk_factors:
+            risk.risk_factors,
+
+          message:
+            "Payment blocked because the transaction was classified as high risk.",
+        },
+        {
+          status: 403,
+        }
+      );
+    }
+
+
+    // =====================================================
+    // 10. CREATE RAZORPAY ORDER
+    // =====================================================
 
     const razorpayOrder =
       await razorpay.orders.create({
-        amount: Math.round(amount * 100),
-        currency: currency.toUpperCase(),
-        receipt: idempotencyKey,
-      });
 
-   
-
-    const {
-      data: payment,
-      error: paymentError,
-    } = await supabase
-      .from("payments")
-      .insert({
-        customer_id,
-
-        amount,
+        amount:
+          Math.round(
+            amount * 100
+          ),
 
         currency:
           currency.toUpperCase(),
 
-        description:
-          description || null,
-
-        payment_method,
-
-        status: "PENDING",
-
-        gateway_status: "CREATED",
-
-        idempotency_key:
+        receipt:
           idempotencyKey,
+      });
 
-        razorpay_order_id:
-          razorpayOrder.id,
-      })
-      .select()
-      .single();
 
+    // =====================================================
+    // 11. SAVE PAYMENT
+    // =====================================================
+
+    const {
+      data: payment,
+      error: paymentError,
+    } =
+      await supabase
+        .from("payments")
+        .insert({
+
+          customer_id,
+
+          amount,
+
+          currency:
+            currency.toUpperCase(),
+
+          description:
+            description || null,
+
+          payment_method,
+
+          status:
+            "PENDING",
+
+          gateway_status:
+            "CREATED",
+
+          idempotency_key:
+            idempotencyKey,
+
+          razorpay_order_id:
+            razorpayOrder.id,
+
+          // -------------------------
+          // ML RISK INFORMATION
+          // -------------------------
+
+          risk_score:
+            risk?.risk_score ??
+            null,
+
+          risk_level:
+            risk?.risk_level ??
+            null,
+
+          risk_factors:
+            risk?.risk_factors ??
+            [],
+        })
+        .select()
+        .single();
+
+
+    // =====================================================
+    // 12. DATABASE ERROR
+    // =====================================================
 
     if (paymentError) {
+
       console.error(
         "Payment creation error:",
         paymentError
@@ -234,58 +394,89 @@ export async function POST(request: NextRequest) {
       throw paymentError;
     }
 
-    
+
+    // =====================================================
+    // 13. RESPONSE
+    // =====================================================
 
     const response = {
-    success: true,
 
-    payment_id:
-      payment.id,
+      success: true,
 
-    id:
-      payment.id,
+      payment_id:
+        payment.id,
 
-    customer_id:
-      payment.customer_id,
+      id:
+        payment.id,
 
-    amount:
-      Number(payment.amount),
+      customer_id:
+        payment.customer_id,
 
-    currency:
-      payment.currency,
+      amount:
+        Number(payment.amount),
 
-    description:
-      payment.description,
+      currency:
+        payment.currency,
 
-    payment_method:
-      payment.payment_method,
+      description:
+        payment.description,
 
-    status:
-      payment.status,
+      payment_method:
+        payment.payment_method,
 
-    gateway_status:
-      payment.gateway_status,
+      status:
+        payment.status,
 
-    razorpay_order_id:
-      payment.razorpay_order_id,
+      gateway_status:
+        payment.gateway_status,
 
-    razorpay_key_id:
-      razorpayKeyId,
+      razorpay_order_id:
+        payment.razorpay_order_id,
 
-    idempotency_key:
-      payment.idempotency_key,
+      razorpay_key_id:
+        razorpayKeyId,
 
-    reused: false,
-  };
+      idempotency_key:
+        payment.idempotency_key,
 
-   
+      // -------------------------
+      // RISK RESPONSE
+      // -------------------------
+
+      risk_score:
+        risk?.risk_score ??
+        null,
+
+      risk_probability:
+        risk?.risk_probability ??
+        null,
+
+      risk_level:
+        risk?.risk_level ??
+        null,
+
+      risk_factors:
+        risk?.risk_factors ??
+        [],
+
+      reused: false,
+    };
+
+
+    // =====================================================
+    // 14. COMPLETE IDEMPOTENCY RECORD
+    // =====================================================
 
     await completeIdempotencyRecord(
       idempotencyKey,
       response
     );
 
-    
+
+    // =====================================================
+    // 15. RELEASE LOCK
+    // =====================================================
+
     await releaseLock(
       idempotencyKey,
       lockToken
@@ -293,30 +484,44 @@ export async function POST(request: NextRequest) {
 
     lockToken = null;
 
-    
+
+    // =====================================================
+    // 16. RETURN
+    // =====================================================
 
     return NextResponse.json(
       response,
-      { status: 200 }
+      {
+        status: 200,
+      }
     );
+
   } catch (error) {
+
     console.error(
       "Payment API error:",
       error
     );
 
-    
+
+    // =====================================================
+    // RELEASE LOCK ON ERROR
+    // =====================================================
 
     if (
       idempotencyKey &&
       lockToken
     ) {
+
       try {
+
         await releaseLock(
           idempotencyKey,
           lockToken
         );
+
       } catch (releaseError) {
+
         console.error(
           "Failed to release Redis lock:",
           releaseError
@@ -324,18 +529,20 @@ export async function POST(request: NextRequest) {
       }
     }
 
+
     return NextResponse.json(
       {
         success: false,
+
         message:
           "Payment processing failed",
       },
-      { status: 500 }
+      {
+        status: 500,
+      }
     );
   }
 }
-
-
 
 
 

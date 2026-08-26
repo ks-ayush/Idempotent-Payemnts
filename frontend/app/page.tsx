@@ -104,10 +104,7 @@ export default function Home() {
   const [chatLoading, setChatLoading] =
     useState(false);
 
-  /*
-   * Generate a new idempotency key
-   * when the page loads.
-   */
+  
 
   useEffect(() => {
     setIdempotencyKey(
@@ -115,9 +112,7 @@ export default function Home() {
     );
   }, []);
 
-  /*
-   * Load payment history.
-   */
+  
 
   useEffect(() => {
     loadHistory();
@@ -140,26 +135,17 @@ export default function Home() {
         data.payments || []
       );
     } catch {
-      /*
-       * History is optional during
-       * initial setup.
-       */
+      
     }
   }
 
-  /*
-   * Create payment + Razorpay order
-   * and open Razorpay Checkout.
-   */
-
+  
   async function createPayment() {
     setLoading(true);
     setError("");
 
     try {
-      /*
-       * Validate amount before sending.
-       */
+      
 
       const numericAmount =
         Number(amount);
@@ -175,10 +161,7 @@ export default function Home() {
         );
       }
 
-      /*
-       * 1. Ask our backend to create
-       * the Razorpay order.
-       */
+     
 
       const response =
         await fetch(
@@ -214,9 +197,7 @@ export default function Home() {
       const data =
         await response.json();
 
-      /*
-       * Backend rejected request.
-       */
+      
 
       if (!response.ok) {
         throw new Error(
@@ -226,11 +207,7 @@ export default function Home() {
         );
       }
 
-      /*
-       * 2. If this is an idempotent
-       * retry, return the previous
-       * response.
-       */
+      
 
       if (data.reused) {
         const payment: Payment = {
@@ -248,10 +225,7 @@ export default function Home() {
         return;
       }
 
-      /*
-       * 3. Make sure Razorpay Checkout
-       * has loaded.
-       */
+      
 
       if (!window.Razorpay) {
         throw new Error(
@@ -259,11 +233,7 @@ export default function Home() {
         );
       }
 
-      /*
-       * 4. Make sure our backend
-       * returned an order ID.
-       */
-
+     
       if (
         !data.razorpay_order_id
       ) {
@@ -280,9 +250,7 @@ export default function Home() {
         );
       }
 
-      /*
-       * 5. Configure Razorpay Checkout.
-       */
+      
 
       const options = {
         key:
@@ -306,19 +274,14 @@ export default function Home() {
         order_id:
           data.razorpay_order_id,
 
-        /*
-         * Customer information.
-         */
+        
 
         prefill: {
           name:
             customerId,
         },
 
-        /*
-         * Useful information passed
-         * along with the checkout.
-         */
+        
 
         notes: {
           customer_id:
@@ -332,19 +295,7 @@ export default function Home() {
           color: "#ffffff",
         },
 
-        /*
-         * This handler runs when
-         * Razorpay Checkout reports
-         * a successful payment.
-         *
-         * IMPORTANT:
-         *
-         * We still keep our application
-         * status as PENDING.
-         *
-         * The webhook will be responsible
-         * for final confirmation.
-         */
+        
 
         handler:
           function (
