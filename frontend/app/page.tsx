@@ -3,6 +3,7 @@
 import Script from "next/script";
 import { useEffect, useState } from "react";
 
+
 type RiskLevel = "LOW" | "MEDIUM" | "HIGH";
 
 type Payment = {
@@ -104,10 +105,7 @@ export default function Home() {
   const [chatLoading, setChatLoading] =
     useState(false);
 
-  /*
-   * Generate a new idempotency key
-   * when the page loads.
-   */
+
 
   useEffect(() => {
     setIdempotencyKey(
@@ -115,9 +113,7 @@ export default function Home() {
     );
   }, []);
 
-  /*
-   * Load payment history.
-   */
+
 
   useEffect(() => {
     loadHistory();
@@ -140,26 +136,17 @@ export default function Home() {
         data.payments || []
       );
     } catch {
-      /*
-       * History is optional during
-       * initial setup.
-       */
+
     }
   }
 
-  /*
-   * Create payment + Razorpay order
-   * and open Razorpay Checkout.
-   */
 
   async function createPayment() {
     setLoading(true);
     setError("");
 
     try {
-      /*
-       * Validate amount before sending.
-       */
+
 
       const numericAmount =
         Number(amount);
@@ -175,10 +162,7 @@ export default function Home() {
         );
       }
 
-      /*
-       * 1. Ask our backend to create
-       * the Razorpay order.
-       */
+
 
       const response =
         await fetch(
@@ -214,23 +198,49 @@ export default function Home() {
       const data =
         await response.json();
 
-      /*
-       * Backend rejected request.
-       */
+
+      if (
+        data.status === "HIGH_RISK"
+      ) {
+        const blockedPayment: Payment = {
+          ...data,
+
+          amount:
+            numericAmount,
+
+          currency,
+
+          payment_method:
+            paymentMethod,
+
+          status:
+            "BLOCKED",
+
+          gateway_status:
+            "RISK_BLOCKED",
+
+          
+        };
+
+        
+        setResult(blockedPayment);
+
+       
+        setLoading(false);
+
+        return;
+      }
+
 
       if (!response.ok) {
         throw new Error(
           data?.message ||
-            data?.detail ||
-            `Request failed with status ${response.status}`
+          data?.detail ||
+          `Request failed with status ${response.status}`
         );
       }
 
-      /*
-       * 2. If this is an idempotent
-       * retry, return the previous
-       * response.
-       */
+
 
       if (data.reused) {
         const payment: Payment = {
@@ -248,10 +258,7 @@ export default function Home() {
         return;
       }
 
-      /*
-       * 3. Make sure Razorpay Checkout
-       * has loaded.
-       */
+
 
       if (!window.Razorpay) {
         throw new Error(
@@ -259,10 +266,6 @@ export default function Home() {
         );
       }
 
-      /*
-       * 4. Make sure our backend
-       * returned an order ID.
-       */
 
       if (
         !data.razorpay_order_id
@@ -280,9 +283,7 @@ export default function Home() {
         );
       }
 
-      /*
-       * 5. Configure Razorpay Checkout.
-       */
+
 
       const options = {
         key:
@@ -306,19 +307,14 @@ export default function Home() {
         order_id:
           data.razorpay_order_id,
 
-        /*
-         * Customer information.
-         */
+
 
         prefill: {
           name:
             customerId,
         },
 
-        /*
-         * Useful information passed
-         * along with the checkout.
-         */
+
 
         notes: {
           customer_id:
@@ -332,19 +328,7 @@ export default function Home() {
           color: "#ffffff",
         },
 
-        /*
-         * This handler runs when
-         * Razorpay Checkout reports
-         * a successful payment.
-         *
-         * IMPORTANT:
-         *
-         * We still keep our application
-         * status as PENDING.
-         *
-         * The webhook will be responsible
-         * for final confirmation.
-         */
+
 
         handler:
           function (
@@ -576,7 +560,7 @@ export default function Home() {
       if (!response.ok) {
         throw new Error(
           data?.message ||
-            "AI request failed"
+          "AI request failed"
         );
       }
 
@@ -616,7 +600,7 @@ export default function Home() {
   const status =
     String(
       result?.status ||
-        "READY"
+      "READY"
     ).toUpperCase();
 
   const riskLevel =
@@ -711,7 +695,7 @@ export default function Home() {
                 label="Payment history"
               />
 
-              <SidebarItem
+              {/* <SidebarItem
                 active={
                   activePage ===
                   "chat"
@@ -723,7 +707,7 @@ export default function Home() {
                 }
                 icon="✦"
                 label="AI assistant"
-              />
+              /> */}
 
             </nav>
 
@@ -742,11 +726,7 @@ export default function Home() {
                 </div>
 
                 <p className="mt-2 text-[10px] leading-4 text-zinc-600">
-                  Redis + PostgreSQL
-                  <br />
-                  Razorpay Test Mode
-                  <br />
-                  ML service ready
+                  BY Ayush Kumar
                 </p>
 
               </div>
@@ -772,10 +752,10 @@ export default function Home() {
                 <h1 className="font-semibold">
 
                   {activePage ===
-                  "payments"
+                    "payments"
                     ? "New Payment"
                     : activePage ===
-                        "history"
+                      "history"
                       ? "Payment History"
                       : "AI Risk Assistant"}
 
@@ -799,96 +779,96 @@ export default function Home() {
 
               {activePage ===
                 "payments" && (
-                <PaymentPage
-                  customerId={
-                    customerId
-                  }
-                  setCustomerId={
-                    setCustomerId
-                  }
-                  amount={amount}
-                  setAmount={
-                    setAmount
-                  }
-                  currency={
-                    currency
-                  }
-                  setCurrency={
-                    setCurrency
-                  }
-                  description={
-                    description
-                  }
-                  setDescription={
-                    setDescription
-                  }
-                  paymentMethod={
-                    paymentMethod
-                  }
-                  setPaymentMethod={
-                    setPaymentMethod
-                  }
-                  idempotencyKey={
-                    idempotencyKey
-                  }
-                  setIdempotencyKey={
-                    setIdempotencyKey
-                  }
-                  result={result}
-                  loading={loading}
-                  error={error}
-                  status={status}
-                  riskLevel={
-                    riskLevel
-                  }
-                  createPayment={
-                    createPayment
-                  }
-                  newPayment={
-                    newPayment
-                  }
-                  setActivePage={
-                    setActivePage
-                  }
-                />
-              )}
+                  <PaymentPage
+                    customerId={
+                      customerId
+                    }
+                    setCustomerId={
+                      setCustomerId
+                    }
+                    amount={amount}
+                    setAmount={
+                      setAmount
+                    }
+                    currency={
+                      currency
+                    }
+                    setCurrency={
+                      setCurrency
+                    }
+                    description={
+                      description
+                    }
+                    setDescription={
+                      setDescription
+                    }
+                    paymentMethod={
+                      paymentMethod
+                    }
+                    setPaymentMethod={
+                      setPaymentMethod
+                    }
+                    idempotencyKey={
+                      idempotencyKey
+                    }
+                    setIdempotencyKey={
+                      setIdempotencyKey
+                    }
+                    result={result}
+                    loading={loading}
+                    error={error}
+                    status={status}
+                    riskLevel={
+                      riskLevel
+                    }
+                    createPayment={
+                      createPayment
+                    }
+                    newPayment={
+                      newPayment
+                    }
+                    setActivePage={
+                      setActivePage
+                    }
+                  />
+                )}
 
               {activePage ===
                 "history" && (
-                <HistoryPage
-                  history={history}
-                  setResult={
-                    setResult
-                  }
-                  setActivePage={
-                    setActivePage
-                  }
-                />
-              )}
+                  <HistoryPage
+                    history={history}
+                    setResult={
+                      setResult
+                    }
+                    setActivePage={
+                      setActivePage
+                    }
+                  />
+                )}
 
               {activePage ===
                 "chat" && (
-                <ChatPage
-                  messages={
-                    chatMessages
-                  }
-                  input={
-                    chatInput
-                  }
-                  setInput={
-                    setChatInput
-                  }
-                  loading={
-                    chatLoading
-                  }
-                  askAI={
-                    askAI
-                  }
-                  result={
-                    result
-                  }
-                />
-              )}
+                  <ChatPage
+                    messages={
+                      chatMessages
+                    }
+                    input={
+                      chatInput
+                    }
+                    setInput={
+                      setChatInput
+                    }
+                    loading={
+                      chatLoading
+                    }
+                    askAI={
+                      askAI
+                    }
+                    result={
+                      result
+                    }
+                  />
+                )}
 
             </div>
 
@@ -948,7 +928,7 @@ function PaymentPage({
 
         <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-500">
           Every payment is protected by idempotency and
-          can be evaluated by the fraud-risk model.
+          is evaluated by the fraud-risk model.
         </p>
 
       </section>
@@ -1162,8 +1142,7 @@ function PaymentPage({
 
             <p className="mt-2 text-xs leading-5 text-zinc-600">
               Keep this key unchanged to simulate a
-              client retry. Redis + PostgreSQL should
-              prevent a duplicate payment.
+              retry.
             </p>
 
           </div>
@@ -1205,7 +1184,7 @@ function PaymentPage({
 
                 <p className="mt-1 text-xs leading-5 text-zinc-600">
                   Click Analyze & Pay again without
-                  changing the key. The backend should
+                  changing the key. The server should
                   return the existing payment.
                 </p>
 
@@ -1496,12 +1475,12 @@ function RiskPanel({
 
       {result.risk_factors &&
         result.risk_factors.length >
-          0 && (
+        0 && (
 
           <div className="mt-7">
 
             <p className="text-xs font-semibold text-zinc-500">
-              WHY THIS PAYMENT WAS FLAGGED
+              PAYMENT WAS FLAGGED
             </p>
 
             <div className="mt-3 space-y-2">
@@ -1582,7 +1561,7 @@ function HistoryPage({
         </h2>
 
         <p className="mt-2 text-sm text-zinc-600">
-          Persistent payment records from PostgreSQL.
+          Persistent payment records .
         </p>
 
       </div>
@@ -1735,7 +1714,7 @@ function ChatPage({
                 key={index}
                 className={
                   message.role ===
-                  "user"
+                    "user"
                     ? "ml-auto max-w-xl rounded-2xl bg-white p-4 text-sm text-black"
                     : "max-w-2xl rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm leading-6 text-zinc-400"
                 }
@@ -1841,11 +1820,10 @@ function SidebarItem({
       onClick={
         onClick
       }
-      className={`mb-1 flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm transition ${
-        active
+      className={`mb-1 flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm transition ${active
           ? "bg-white/10 text-white"
           : "text-zinc-600 hover:bg-white/5 hover:text-zinc-300"
-      }`}
+        }`}
     >
       <span>
         {icon}
@@ -1920,10 +1898,10 @@ function RiskBadge({
     <span
       className={
         level ===
-        "HIGH"
+          "HIGH"
           ? "rounded-full bg-red-400/10 px-3 py-2 text-[10px] font-bold text-red-400"
           : level ===
-              "MEDIUM"
+            "MEDIUM"
             ? "rounded-full bg-yellow-400/10 px-3 py-2 text-[10px] font-bold text-yellow-400"
             : "rounded-full bg-green-400/10 px-3 py-2 text-[10px] font-bold text-green-400"
       }
@@ -1946,9 +1924,9 @@ function statusClass(
 
   if (
     status ===
-      "FAILED" ||
+    "FAILED" ||
     status ===
-      "REJECTED"
+    "REJECTED"
   ) {
     return "inline-flex items-center gap-2 rounded-full bg-red-400/10 px-3 py-2 text-xs font-bold text-red-400";
   }
