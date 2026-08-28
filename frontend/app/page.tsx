@@ -2,7 +2,7 @@
 
 import Script from "next/script";
 import { useEffect, useState } from "react";
-
+import { supabase } from "@/lib/supabase";
 
 type RiskLevel = "LOW" | "MEDIUM" | "HIGH";
 
@@ -119,6 +119,8 @@ export default function Home() {
     loadHistory();
   }, []);
 
+
+
   async function loadHistory() {
     try {
       const response = await fetch(
@@ -219,13 +221,13 @@ export default function Home() {
           gateway_status:
             "RISK_BLOCKED",
 
-          
+
         };
 
-        
+
         setResult(blockedPayment);
 
-       
+
         setLoading(false);
 
         return;
@@ -605,6 +607,12 @@ export default function Home() {
 
   const riskLevel =
     result?.risk_level;
+
+
+
+
+
+
 
   return (
     <>
@@ -1232,7 +1240,7 @@ function PaymentPage({
 
                 <div className="flex items-center justify-between">
 
-                  <span
+                  {/* <span
                     className={
                       statusClass(
                         status
@@ -1243,7 +1251,20 @@ function PaymentPage({
                     <span className="h-2 w-2 rounded-full bg-current" />
 
                     {status}
+                    
 
+                  </span> */}
+
+                  <span
+                    className={
+                      statusClass(
+                        result.status || "UNKNOWN"
+                      )
+                    }
+                  >
+                    <span className="h-2 w-2 rounded-full bg-current" />
+
+                    {result.status || "UNKNOWN"}
                   </span>
 
                   {result.reused && (
@@ -1821,8 +1842,8 @@ function SidebarItem({
         onClick
       }
       className={`mb-1 flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm transition ${active
-          ? "bg-white/10 text-white"
-          : "text-zinc-600 hover:bg-white/5 hover:text-zinc-300"
+        ? "bg-white/10 text-white"
+        : "text-zinc-600 hover:bg-white/5 hover:text-zinc-300"
         }`}
     >
       <span>
