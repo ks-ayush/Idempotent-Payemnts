@@ -3,27 +3,35 @@ import crypto from "crypto";
 
 import { supabase } from "@/lib/supabase";
 
+
 function verifyWebhookSignature(
   rawBody: string,
   signature: string,
   secret: string
-) {
+): boolean {
+
   const expectedSignature =
     crypto
-      .createHmac("sha256", secret)
+      .createHmac(
+        "sha256",
+        secret
+      )
       .update(rawBody)
       .digest("hex");
 
-  /*
-   * Use timingSafeEqual instead of
-   * directly comparing signatures.
-   */
 
   const expectedBuffer =
-    Buffer.from(expectedSignature, "utf8");
+    Buffer.from(
+      expectedSignature,
+      "utf8"
+    );
 
   const receivedBuffer =
-    Buffer.from(signature, "utf8");
+    Buffer.from(
+      signature,
+      "utf8"
+    );
+
 
   if (
     expectedBuffer.length !==
@@ -32,39 +40,40 @@ function verifyWebhookSignature(
     return false;
   }
 
+
   return crypto.timingSafeEqual(
     expectedBuffer,
     receivedBuffer
   );
 }
 
+
 export async function POST(
   request: NextRequest
 ) {
+
   try {
-    /*
-     * IMPORTANT:
-     *
-     * We must read the RAW body.
-     *
-     * Do not call request.json()
-     * before signature verification.
-     */
+
+    // =====================================================
+    // 1. READ RAW BODY
+    // =====================================================
 
     const rawBody =
       await request.text();
 
-    /*
-     * Razorpay sends the signature
-     * in this header.
-     */
+
+    // =====================================================
+    // 2. GET SIGNATURE
+    // =====================================================
 
     const signature =
       request.headers.get(
         "X-Razorpay-Signature"
       );
 
+
     if (!signature) {
+
       console.error(
         "Missing Razorpay webhook signature"
       );
@@ -75,19 +84,23 @@ export async function POST(
           message:
             "Missing webhook signature",
         },
-        { status: 400 }
+        {
+          status: 400,
+        }
       );
     }
 
-    /*
-     * Webhook secret configured in
-     * Razorpay Dashboard.
-     */
+
+    // =====================================================
+    // 3. GET WEBHOOK SECRET
+    // =====================================================
 
     const webhookSecret =
       process.env.RZP_WEBHOOK_SECRET;
 
+
     if (!webhookSecret) {
+
       console.error(
         "RZP_WEBHOOK_SECRET is missing"
       );
@@ -98,13 +111,16 @@ export async function POST(
           message:
             "Webhook secret is not configured",
         },
-        { status: 500 }
+        {
+          status: 500,
+        }
       );
     }
 
-    /*
-     * 1. Verify Razorpay signature
-     */
+
+    // =====================================================
+    // 4. VERIFY SIGNATURE
+    // =====================================================
 
     const validSignature =
       verifyWebhookSignature(
@@ -113,7 +129,9 @@ export async function POST(
         webhookSecret
       );
 
+
     if (!validSignature) {
+
       console.error(
         "Invalid Razorpay webhook signature"
       );
@@ -124,64 +142,96 @@ export async function POST(
           message:
             "Invalid webhook signature",
         },
-        { status: 401 }
+        {
+          status: 401,
+        }
       );
     }
 
-    /*
-     * 2. Parse the body AFTER
-     * signature verification.
-     */
+
+    // =====================================================
+    // 5. WEBHOOK EVENT ID
+    // =====================================================
+
+    const eventId =
+      request.headers.get(
+        "x-razorpay-event-id"
+      );
+
+
+    console.log(
+      "Razorpay event ID:",
+      eventId
+    );
+
+
+    // =====================================================
+    // 6. PARSE BODY
+    // =====================================================
 
     const event =
       JSON.parse(rawBody);
 
+
     const eventName =
       event?.event;
+
 
     console.log(
       "Razorpay webhook:",
       eventName
     );
 
-    /*
-     * 3. Get payment entity
-     */
+
+    // =====================================================
+    // 7. GET PAYMENT ENTITY
+    // =====================================================
 
     const paymentEntity =
       event?.payload?.payment?.entity;
 
-    /*
-     * Some events may not contain
-     * payment.entity.
-     */
+
+    // order.paid can contain both order
+    // and payment information.
+    //
+    // We use payment.entity when available.
 
     if (!paymentEntity) {
+
       console.log(
-        "Webhook does not contain payment entity:",
+        "No payment entity:",
         eventName
       );
 
-      return NextResponse.json({
-        success: true,
-        message:
-          "Event received but no payment entity",
-      });
+      return NextResponse.json(
+        {
+          success: true,
+          received: true,
+          event: eventName,
+        },
+        {
+          status: 200,
+        }
+      );
     }
 
+
     const razorpayPaymentId =
-      paymentEntity.id;
+      paymentEntity?.id ||
+      null;
+
 
     const razorpayOrderId =
-      paymentEntity.order_id;
+      paymentEntity?.order_id ||
+      null;
 
-    /*
-     * We need an order ID to connect
-     * the Razorpay payment to our
-     * local payment record.
-     */
+
+    // =====================================================
+    // 8. ORDER ID REQUIRED
+    // =====================================================
 
     if (!razorpayOrderId) {
+
       console.error(
         "Webhook payment has no order_id"
       );
@@ -192,22 +242,27 @@ export async function POST(
           message:
             "Missing Razorpay order ID",
         },
-        { status: 400 }
+        {
+          status: 400,
+        }
       );
     }
 
-    /*
-     * 4. Handle payment.authorized
-     */
+
+    // =====================================================
+    // 9. AUTHORIZED
+    // =====================================================
 
     if (
       eventName ===
       "payment.authorized"
     ) {
+
       const { error } =
         await supabase
           .from("payments")
           .update({
+
             gateway_status:
               "AUTHORIZED",
 
@@ -219,15 +274,18 @@ export async function POST(
 
             updated_at:
               new Date().toISOString(),
+
           })
           .eq(
             "razorpay_order_id",
             razorpayOrderId
           );
 
+
       if (error) {
         throw error;
       }
+
 
       console.log(
         "Payment authorized:",
@@ -235,19 +293,23 @@ export async function POST(
       );
     }
 
-    /*
-     * 5. Handle payment.captured
-     */
+
+    // =====================================================
+    // 10. CAPTURED
+    // =====================================================
 
     else if (
       eventName ===
       "payment.captured"
     ) {
+
       const { error } =
         await supabase
           .from("payments")
           .update({
-            status: "SUCCESS",
+
+            status:
+              "SUCCESS",
 
             gateway_status:
               "CAPTURED",
@@ -260,15 +322,18 @@ export async function POST(
 
             updated_at:
               new Date().toISOString(),
+
           })
           .eq(
             "razorpay_order_id",
             razorpayOrderId
           );
 
+
       if (error) {
         throw error;
       }
+
 
       console.log(
         "Payment captured:",
@@ -276,27 +341,34 @@ export async function POST(
       );
     }
 
-    /*
-     * 6. Handle payment.failed
-     */
+
+    // =====================================================
+    // 11. FAILED
+    // =====================================================
 
     else if (
       eventName ===
       "payment.failed"
     ) {
+
       const errorCode =
-        paymentEntity.error_code ||
+        paymentEntity?.error_code ||
         null;
 
+
       const errorDescription =
-        paymentEntity.error_description ||
+        paymentEntity
+          ?.error_description ||
         null;
+
 
       const { error } =
         await supabase
           .from("payments")
           .update({
-            status: "FAILED",
+
+            status:
+              "FAILED",
 
             gateway_status:
               "FAILED",
@@ -315,15 +387,18 @@ export async function POST(
 
             updated_at:
               new Date().toISOString(),
+
           })
           .eq(
             "razorpay_order_id",
             razorpayOrderId
           );
 
+
       if (error) {
         throw error;
       }
+
 
       console.log(
         "Payment failed:",
@@ -331,29 +406,34 @@ export async function POST(
       );
     }
 
-    /*
-     * 7. Handle order.paid
-     *
-     * This is another useful confirmation
-     * that the order was paid.
-     */
+
+    // =====================================================
+    // 12. ORDER PAID
+    // =====================================================
 
     else if (
       eventName ===
       "order.paid"
     ) {
+
       const orderEntity =
-        event?.payload?.order?.entity;
+        event?.payload
+          ?.order
+          ?.entity;
+
 
       const orderId =
         orderEntity?.id ||
         razorpayOrderId;
 
+
       const { error } =
         await supabase
           .from("payments")
           .update({
-            status: "SUCCESS",
+
+            status:
+              "SUCCESS",
 
             gateway_status:
               "PAID",
@@ -366,15 +446,18 @@ export async function POST(
 
             updated_at:
               new Date().toISOString(),
+
           })
           .eq(
             "razorpay_order_id",
             orderId
           );
 
+
       if (error) {
         throw error;
       }
+
 
       console.log(
         "Order paid:",
@@ -382,32 +465,44 @@ export async function POST(
       );
     }
 
-    /*
-     * 8. Ignore events we don't
-     * currently need.
-     */
+
+    // =====================================================
+    // 13. OTHER EVENTS
+    // =====================================================
 
     else {
+
       console.log(
         "Unhandled Razorpay event:",
         eventName
       );
     }
 
-    /*
-     * 9. Return 200
-     */
 
-    return NextResponse.json({
-      success: true,
-      received: true,
-      event: eventName,
-    });
+    // =====================================================
+    // 14. SUCCESS RESPONSE
+    // =====================================================
+
+    return NextResponse.json(
+      {
+        success: true,
+        received: true,
+        event: eventName,
+        event_id: eventId,
+      },
+      {
+        status: 200,
+      }
+    );
+
+
   } catch (error) {
+
     console.error(
       "Razorpay webhook error:",
       error
     );
+
 
     return NextResponse.json(
       {
@@ -415,7 +510,10 @@ export async function POST(
         message:
           "Webhook processing failed",
       },
-      { status: 500 }
+      {
+        status: 500,
+      }
     );
   }
 }
+

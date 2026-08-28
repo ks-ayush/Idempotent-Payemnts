@@ -260,9 +260,9 @@ export async function POST(
     );
 
 
-    // =====================================================
-    // 9. HIGH RISK → BLOCK
-    // =====================================================
+    // // =====================================================
+    // // 9. HIGH RISK → BLOCK
+    // // =====================================================
 
     if (
       risk &&
@@ -280,7 +280,7 @@ export async function POST(
         {
           success: false,
 
-          status: "BLOCKED",
+          status: "HIGH_RISK",
 
           risk_score:
             risk.risk_score,
@@ -295,13 +295,15 @@ export async function POST(
             risk.risk_factors,
 
           message:
-            "Payment blocked because the transaction was classified as high risk.",
+            "Payment is risky because the transaction is classified as high risk.",
         },
         {
           status: 403,
         }
       );
     }
+
+   
 
 
     // =====================================================
