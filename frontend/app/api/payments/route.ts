@@ -351,7 +351,7 @@ export async function POST(
           payment_method,
 
           status:
-            "success",
+            "PENDING",
 
           gateway_status:
             "CREATED",
